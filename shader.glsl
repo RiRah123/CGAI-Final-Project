@@ -12,6 +12,8 @@ uniform vec3 iMouse;
 #define MAX_STEPS 150
 #define SHADOW_STEPS 20
 #define AO_STEPS 8
+#define NUM_SPLATS 8
+#define SPLAT_SIZE 0.15
 
 // Global Variables
 int fractal_iterations;
@@ -80,6 +82,11 @@ const float REFLECTION_STRENGTH = 0.5;
 const float FRESNEL_BIAS = 0.1;
 const float FRESNEL_SCALE = 0.4;
 const float FRESNEL_POWER = 2.0;
+
+// Gaussian Splat Parameters
+vec3 splat_colors[NUM_SPLATS];
+vec2 splat_positions[NUM_SPLATS];
+float splat_intensities[NUM_SPLATS];
 
 // Utility Functions
 float box_distance(vec3 p, vec3 s) {
@@ -333,6 +340,37 @@ vec3 get_reflection_color(vec3 pos, vec3 normal, vec3 ray_dir, float time) {
     return total_reflection;
 }
 
+float gaussian(vec2 p, vec2 center, float size) {
+    vec2 d = p - center;
+    return exp(-dot(d, d) / size);
+}
+
+vec3 apply_splats(vec2 uv, vec3 base_color, float time) {
+    vec3 splat_contribution = vec3(0.0);
+    
+    // Initialize splat properties with animation
+    for(int i = 0; i < NUM_SPLATS; i++) {
+        float t = time + float(i) * PHI;
+        splat_positions[i] = vec2(
+            0.5 + 0.3 * cos(t * 0.5 + float(i)),
+            0.5 + 0.3 * sin(t * 0.7 + float(i))
+        );
+        splat_intensities[i] = 0.15 + 0.1 * sin(t * 0.3);
+        splat_colors[i] = get_animated_color(
+            mix(material_color1, material_color3, float(i) / float(NUM_SPLATS)),
+            float(i) * 0.5
+        );
+    }
+    
+    // Apply splats
+    for(int i = 0; i < NUM_SPLATS; i++) {
+        float intensity = gaussian(uv, splat_positions[i], SPLAT_SIZE) * splat_intensities[i];
+        splat_contribution += splat_colors[i] * intensity;
+    }
+    
+    return base_color + splat_contribution;
+}
+
 vec3 shade_pixel(vec3 ray_origin, vec3 ray_dir, vec2 screen_uv) {
     vec3 data = trace_ray(ray_origin, ray_dir);
     float fractal_id = data.x;
@@ -447,8 +485,9 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     vec3 ray_dir = camera * normalize(vec3(p, 4.5));
     vec3 color = shade_pixel(camera_pos, ray_dir, uv);
     
-    // Enhanced color grading
+    // Enhanced color grading with splats
     color = color * 3.0 / (2.5 + color);
+    color = apply_splats(uv, color, time);
     color = pow(color, vec3(0.4545));
     color += 0.05 * vec3(sin(uv.x * 50.0 + time) * sin(uv.y * 50.0 + time)); // Subtle sparkle effect
     
