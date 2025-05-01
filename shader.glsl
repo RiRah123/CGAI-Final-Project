@@ -6,12 +6,12 @@ uniform float iTime;
 uniform vec3 iMouse;
 
 // Constants
-#define GOLDEN_RATIO 1.6180339887498948482
-#define PI 3.14159265358979323846
-#define MAX_ITERATIONS 8
-#define MAX_STEPS 120
-#define SHADOW_STEPS 15
-#define AO_STEPS 6
+#define PHI 1.6180339887498948482
+#define TAU 6.28318530717958647692
+#define MAX_ITERATIONS 12
+#define MAX_STEPS 150
+#define SHADOW_STEPS 20
+#define AO_STEPS 8
 
 // Global Variables
 int fractal_iterations;
@@ -22,9 +22,9 @@ float vignette_radius = 0.925;
 float vignette_strength = 0.8;
 
 // Material Properties
-vec3 material_color1 = vec3(0.8, 0.3, 0.1);
-vec3 material_color2 = vec3(1.0, 0.4, 0.0);
-vec3 material_background = vec3(0.05, 0.02, 0.01);
+vec3 material_color1 = vec3(0.2, 0.6, 0.9);
+vec3 material_color2 = vec3(0.1, 0.3, 0.8);
+vec3 material_background = vec3(0.02, 0.05, 0.1);
 float material_refraction = 2.611;
 float material_sharpness = 8.0;
 
@@ -238,7 +238,9 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     vec2 mo = iMouse.xy/iResolution.xy;
     float time = iTime*0.8;
 
-    fractal_iterations = iMouse.z >= 0.0001 ? 1 + int(7. * iMouse.x / iResolution.x) : 6; 
+    float cycle = sin(time * 2.0) * 0.5 + 0.5;
+    cycle = pow(cycle, 0.7);
+    fractal_iterations = 1 + int(7.0 * cycle);
     
     vec3 target = vec3(0.0);
     vec3 camera_pos = target + vec3(5.0 * cos(iTime), 5.0 * sin(time), 5.0 * cos(time));
