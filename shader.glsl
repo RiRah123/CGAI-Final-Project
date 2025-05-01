@@ -68,6 +68,12 @@ struct Camera {
     float rotation;
 };
 
+// Neural Network Parameters
+const float WEIGHT_1 = 0.5;
+const float WEIGHT_2 = 0.7;
+const float WEIGHT_3 = 0.3;
+const float WEIGHT_4 = 0.6;
+
 // Utility Functions
 float box_distance(vec3 p, vec3 s) {
     vec3 q = abs(p) - s;
@@ -121,19 +127,48 @@ vec3 get_animated_color(vec3 base_color, float time_offset) {
     return vec3(r, g, b);
 }
 
+vec4 activate_neuron(vec4 neuron_data, float time) {
+    // Simple activation function using sine waves with different frequencies
+    return vec4(
+        sin(neuron_data.x * WEIGHT_1 + time) * 0.5 + 0.5,
+        sin(neuron_data.y * WEIGHT_2 + time * 1.3) * 0.5 + 0.5,
+        sin(neuron_data.z * WEIGHT_3 + time * 0.7) * 0.5 + 0.5,
+        sin(neuron_data.w * WEIGHT_4 + time * 0.9) * 0.5 + 0.5
+    );
+}
+
+vec3 neural_color_transform(vec3 color, float time) {
+    vec4 neural_data = vec4(color, time * 0.1);
+    vec4 activated = activate_neuron(neural_data, time);
+    return mix(color, vec3(activated.xyz), 0.3);
+}
+
+float neural_distance_modify(float dist, vec3 p, float time) {
+    vec4 neural_data = vec4(p * 0.1, time * 0.1);
+    vec4 activated = activate_neuron(neural_data, time);
+    return dist * (1.0 + 0.1 * (activated.x - 0.5));
+}
+
 vec2 fractal_distance(vec3 z) {
     float time = iTime * 0.5;
     
     vec3 offset2 = vec3(8.0, 0.0, 0.0);
     
+    // Apply neural network influence to the position
+    vec4 pos_influence = activate_neuron(vec4(z * 0.1, time), time);
+    z += (pos_influence.xyz - 0.5) * 0.5;
+    
     vec2 d1 = fractal_distance_single(z, 0.0);
     vec2 d2 = fractal_distance_single(z - offset2, 2.0);
     
-    // Return identifier for which fractal we hit (stored in x component)
+    // Modify distances using neural network
+    d1.y = neural_distance_modify(d1.y, z, time);
+    d2.y = neural_distance_modify(d2.y, z - offset2, time);
+    
     if (d1.y < d2.y) {
-        return vec2(0.0, d1.y); // First fractal identifier
+        return vec2(0.0, d1.y);
     }
-    return vec2(1.0, d2.y); // Second fractal identifier
+    return vec2(1.0, d2.y);
 }
 
 vec3 trace_ray(vec3 ray_origin, vec3 ray_dir) {
@@ -222,35 +257,40 @@ float compute_ao(vec3 p, vec3 normal) {
 
 vec3 shade_pixel(vec3 ray_origin, vec3 ray_dir, vec2 screen_uv) {
     vec3 data = trace_ray(ray_origin, ray_dir);
-    float fractal_id = data.x; // Now using this to identify which fractal we hit
+    float fractal_id = data.x;
     float distance = data.y;
     float steps = data.z;
     
     vec3 p = ray_origin + ray_dir * distance;
     vec3 pixel_color;
+    float time = iTime * 0.5;
     
-    // Color based on which fractal we hit
+    // Neural network influenced colors
     if (fractal_id < 0.5) {
-        // First fractal (blue)
         vec3 c1 = get_animated_color(material_color1, 0.0);
         vec3 c2 = get_animated_color(material_color2, 1.047);
-        pixel_color = mix(c1, c2, 0.5 + 0.5 * sin(iTime));
+        pixel_color = mix(c1, c2, 0.5 + 0.5 * sin(time));
+        pixel_color = neural_color_transform(pixel_color, time);
     } else {
-        // Second fractal (red)
         vec3 c3 = get_animated_color(material_color3, 2.094);
         vec3 c4 = get_animated_color(material_color4, 3.142);
-        pixel_color = mix(c3, c4, 0.5 + 0.5 * sin(iTime + 3.14));
+        pixel_color = mix(c3, c4, 0.5 + 0.5 * sin(time + 3.14));
+        pixel_color = neural_color_transform(pixel_color, time);
     }
-    
-    vec3 final_color;
 
+    vec3 final_color;
     if (distance >= max_ray_distance) {
         float vignette = smoothstep(vignette_radius, vignette_radius - vignette_strength, length(screen_uv - vec2(0.5)));
         final_color = material_background * vignette;
     } else {
         vec3 normal = compute_normal(p);
-
         float ao = max(compute_ao(p, normal), 0.0);
+        
+        // Neural network influenced lighting
+        vec4 light_influence = activate_neuron(vec4(p * 0.1, time), time);
+        light_pos1 = mix(light_pos1, 10.0 * (light_influence.xyz - 0.5), 0.3);
+        light_pos2 = mix(light_pos2, -10.0 * (light_influence.wzx - 0.5), 0.3);
+        
         vec3 light1 = compute_lighting(p, ray_dir, ray_origin, light_pos1, light_tint1, normal);
         vec3 light2 = compute_lighting(p, ray_dir, ray_origin, light_pos2, light_tint2, normal);
 
@@ -259,15 +299,20 @@ vec3 shade_pixel(vec3 ray_origin, vec3 ray_dir, vec2 screen_uv) {
     }
 
     if (enable_glow && float(steps) * ray_step_scale > glow_min) {
+        vec4 glow_influence = activate_neuron(vec4(p * 0.1, time), time);
         float glow = (glow_strength - 0.2) * smoothstep(glow_min, 100.0, float(steps) * ray_step_scale);
-        vec3 glow_color = glow_color * 3.0;
-        final_color += glow_color * pow(glow, glow_decay);
+        vec3 neural_glow = mix(glow_color, vec3(glow_influence.xyz), 0.4);
+        final_color += neural_glow * pow(glow, glow_decay);
     }
 
     float fog_distance = distance < max_ray_distance ? distance : max_ray_distance;
     float fog = 1.0 - exp(-fog_strength * fog_distance);
-    final_color = mix(final_color, fog_color, pow(fog, fog_decay));
-
+    
+    // Neural network influenced fog color
+    vec4 fog_influence = activate_neuron(vec4(ray_dir * 0.1, time), time);
+    vec3 neural_fog = mix(fog_color, vec3(fog_influence.xyz), 0.3);
+    
+    final_color = mix(final_color, neural_fog, pow(fog, fog_decay));
     return final_color;
 }
 
