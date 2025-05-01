@@ -243,8 +243,15 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     fractal_iterations = 1 + int(7.0 * cycle);
     
     vec3 target = vec3(0.0);
-    vec3 camera_pos = target + vec3(5.0 * cos(iTime), 5.0 * sin(time), 5.0 * cos(time));
-    float camera_rotation = 0.0;
+    float camera_distance = 7.0 + 2.0 * sin(time * 0.2);
+    float camera_height = 3.0 * sin(time * 0.3) + 2.0 * cos(time * 0.4);
+    float camera_rotation = time * 0.2 + sin(time * 0.3) * 0.5;
+    
+    vec3 camera_pos = target + vec3(
+        camera_distance * cos(time * 0.5) * cos(time * 0.2),
+        camera_height,
+        camera_distance * sin(time * 0.5) * sin(time * 0.2)
+    );
     
     mat3 camera = setup_camera(camera_pos, target, camera_rotation);
 
