@@ -24,6 +24,8 @@ float vignette_strength = 0.8;
 // Material Properties
 vec3 material_color1 = vec3(0.2, 0.6, 0.9);
 vec3 material_color2 = vec3(0.1, 0.3, 0.8);
+vec3 material_color3 = vec3(0.9, 0.3, 0.2);
+vec3 material_color4 = vec3(0.8, 0.2, 0.1);
 vec3 material_background = vec3(0.02, 0.05, 0.1);
 float material_refraction = 2.611;
 float material_sharpness = 8.0;
@@ -81,9 +83,9 @@ mat3 setup_camera(vec3 ro, vec3 ta, float cr) {
 }
 
 // Core Functions
-vec2 fractal_distance(vec3 z) {
+vec2 fractal_distance_single(vec3 z, float offset_x) {
     float scale = 3.0;
-    vec3 offset = vec3(1.0, 0.0, 0.0);
+    vec3 offset = vec3(1.0 + offset_x, 0.0, 0.0);
     float orbit_trap = 100000.0;
     float s = 1.0;
     float d = 1000.0;
@@ -109,6 +111,16 @@ vec2 fractal_distance(vec3 z) {
     
     d = box_distance(z, vec3(0.5)) * s;
     return vec2(d * 2.0, orbit_trap).yx;
+}
+
+vec2 fractal_distance(vec3 z) {
+    vec2 d1 = fractal_distance_single(z, 0.0);
+    vec2 d2 = fractal_distance_single(z - vec3(4.0, 0.0, 0.0), 2.0);
+    
+    if (d1.y < d2.y) {
+        return d1;
+    }
+    return d2;
 }
 
 vec3 trace_ray(vec3 ray_origin, vec3 ray_dir) {
@@ -201,14 +213,19 @@ vec3 shade_pixel(vec3 ray_origin, vec3 ray_dir, vec2 screen_uv) {
     float distance = data.y;
     float steps = data.z;
     
-    vec3 pixel_color = mix(material_color1, material_color2, orbit_trap);
+    vec3 p = ray_origin + ray_dir * distance;
+    vec3 pixel_color;
+    if (p.x < 2.0) {
+        pixel_color = mix(material_color1, material_color2, orbit_trap);
+    } else {
+        pixel_color = mix(material_color3, material_color4, orbit_trap);
+    }
     vec3 final_color;
 
     if (distance >= max_ray_distance) {
         float vignette = smoothstep(vignette_radius, vignette_radius - vignette_strength, length(screen_uv - vec2(0.5)));
         final_color = material_background * vignette;
     } else {
-        vec3 p = ray_origin + ray_dir * distance;
         vec3 normal = compute_normal(p);
 
         float ao = max(compute_ao(p, normal), 0.0);
