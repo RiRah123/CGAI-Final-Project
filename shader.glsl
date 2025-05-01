@@ -58,7 +58,7 @@ float glow_decay = 1.2;          // Increased decay for less glow
 bool super_glow = false;         // Disable super glow
 bool enable_glow = true;
 vec3 fog_color = vec3(0.4, 0.5, 0.6);  // Darker fog
-float fog_strength = 0.1;        // Slightly increased fog
+float fog_strength = 0.02;        // Set to 0.0 to disable fog
 float fog_decay = 2.8;
 
 // Shadow Properties
