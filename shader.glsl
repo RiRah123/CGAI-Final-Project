@@ -123,17 +123,12 @@ vec3 get_animated_color(vec3 base_color, float time_offset) {
 
 vec2 fractal_distance(vec3 z) {
     float time = iTime * 0.5;
-    float mouse_influence = iMouse.x / iResolution.x * 2.0;
     
-    // Dynamic positioning based on time and mouse
-    vec3 offset2 = vec3(4.0 * (1.0 + 0.2 * sin(time)), 
-                        2.0 * sin(time * 0.7) * mouse_influence,
-                        2.0 * cos(time * 0.5) * mouse_influence);
+    vec3 offset2 = vec3(8.0, 0.0, 0.0);
     
     vec2 d1 = fractal_distance_single(z, 0.0);
     vec2 d2 = fractal_distance_single(z - offset2, 2.0);
     
-    // Smooth blend between the two objects
     float blend = smoothstep(-1.0, 1.0, sin(time));
     float d = mix(d1.y, d2.y, blend);
     
@@ -276,44 +271,36 @@ vec3 shade_pixel(vec3 ray_origin, vec3 ray_dir, vec2 screen_uv) {
 // Main Functions
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     vec2 uv = fragCoord.xy / iResolution.xy;
-    vec2 mo = iMouse.xy/iResolution.xy;
     float time = iTime*0.8;
 
     float cycle = sin(time * 2.0) * 0.5 + 0.5;
     cycle = pow(cycle, 0.7);
     fractal_iterations = 1 + int(7.0 * cycle);
     
-    // Dynamic camera movement
-    float camera_radius = 7.0 + sin(time * 0.5) * 2.0;
-    float camera_height = 3.0 + cos(time * 0.3) * 2.0;
-    float camera_speed = 0.5;
+    float camera_radius = 12.0;
+    float camera_height = 4.0;
+    float camera_speed = 0.2;
     
-    vec3 target = vec3(2.0 * sin(time * 0.2), 0.0, 0.0);
+    vec3 target = vec3(4.0, 0.0, 0.0);
     vec3 camera_pos = target + vec3(
         camera_radius * cos(time * camera_speed),
         camera_height,
         camera_radius * sin(time * camera_speed)
     );
     
-    // Mouse influence on camera
-    if (iMouse.z > 0.0) {
-        camera_pos.xz += mo * 5.0 - 2.5;
-        camera_pos.y += (mo.y - 0.5) * 5.0;
-    }
-    
-    float camera_rotation = sin(time * 0.3) * 0.2;
+    float camera_rotation = time * 0.1;
     
     // Dynamic lighting
     light_pos1 = vec3(
-        10.0 * cos(time * 0.7),
-        8.0 + 4.0 * sin(time * 0.5),
-        10.0 * sin(time * 0.7)
+        10.0 * cos(time * 0.5),
+        8.0 + 2.0 * sin(time * 0.3),
+        10.0 * sin(time * 0.5)
     );
     
     light_pos2 = vec3(
-        -10.0 * cos(time * 0.5),
-        6.0 + 4.0 * sin(time * 0.6),
-        -10.0 * sin(time * 0.5)
+        -10.0 * cos(time * 0.4),
+        6.0 + 2.0 * sin(time * 0.2),
+        -10.0 * sin(time * 0.4)
     );
     
     // Color cycling for lights
