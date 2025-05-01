@@ -10,60 +10,54 @@ uniform vec3 iMouse;
 #define SHADOW_STEPS 15
 #define AO_STEPS 6
 
-int ambient_occlusion_steps = AO_STEPS;
-float ambient_occlusion_radius = 0.165;
-float ambient_occlusion_darkness = 0.37;
+int ao_steps = AO_STEPS;
+float ao_radius = 0.165;
+float ao_darkness = 0.37;
 
 float vignette_strength = 0.8;
 float vignette_radius = 0.925;
 
-float glow_intensity = 1.3;
-vec3 glow_color = vec3(1.0, 1.0, 1.0);
-float glow_threshold = 0.0;
-float glow_falloff = 0.9;
-bool super_glow = false;
-bool glow = true;
+float glow_strength = 1.3;
+vec3 glow_tint = vec3(1.0, 1.0, 1.0);
+float glow_min = 0.0;
+float glow_decay = 0.9;
+bool enable_super_glow = false;
+bool enable_glow = true;
 
-vec3 fog_color = vec3(0.5, 0.6, 0.7);
-float fog_density = 0.08;
-float fog_falloff = 3.0;
+vec3 fog_tint = vec3(0.5, 0.6, 0.7);
+float fog_strength = 0.08;
+float fog_decay = 3.0;
 
-// Shadows
-float self_shadow_bias = 0.01;
-float shadow_darkness = 0.2;
-int shadow_steps = SHADOW_STEPS;
+float shadow_bias = 0.01;
+float shadow_strength = 0.2;
+int shadow_iterations = SHADOW_STEPS;
 float shadow_softness = 64.0;
-float min_step_size = 0.0;
+float min_step = 0.0;
 
-// Lighting
-float light_intensity = 3.600001;
-vec3 light1_position = vec3(10.0);
-vec3 light2_position = vec3(-10.0);
-vec3 light1_color = vec3(1.0, 1.0, 1.0);
-vec3 light2_color = vec3(1.0, 1.0, 1.0);
+float light_strength = 3.600001;
+vec3 light1_pos = vec3(10.0);
+vec3 light2_pos = vec3(-10.0);
+vec3 light1_tint = vec3(1.0, 1.0, 1.0);
+vec3 light2_tint = vec3(1.0, 1.0, 1.0);
 
-// Rendering
-int iterations; // Set in main image
-int max_steps = MAX_STEPS;
-float ambient_light = 0.35;
-float max_distance = 20.0;
-float surface_distance = 0.004; // 0.00001
-float raystep_multiplier = 0.6;
+int fractal_iterations;
+int max_ray_steps = MAX_STEPS;
+float ambient_strength = 0.35;
+float max_ray_distance = 20.0;
+float surface_threshold = 0.004;
+float ray_step_scale = 0.6;
 
-// Coloring
-bool colors = true;
-vec3 palette_color1 = vec3(0.8, 0.3, 0.1);
-vec3 palette_color2 = vec3(1.0, 0.4, 0.0);
-vec3 bg_color = vec3(0.05, 0.02, 0.01);
+bool enable_colors = true;
+vec3 color1 = vec3(0.8, 0.3, 0.1);
+vec3 color2 = vec3(1.0, 0.4, 0.0);
+vec3 background_tint = vec3(0.05, 0.02, 0.01);
 
-// Refraction
-float refraction_intensity = 2.611;
+float refraction_strength = 2.611;
 float refraction_sharpness = 8.0;
 
-// Fractal
-float cube_sdf3d(vec3 p, vec3 s) { vec3 q = abs(p) - s; return length(max(q, 0.0)); }
+float box_distance(vec3 p, vec3 s) { vec3 q = abs(p) - s; return length(max(q, 0.0)); }
 
-vec2 vicseksnowflake_sdf(vec3 z) {
+vec2 fractal_distance(vec3 z) {
     float scale = 3.0;
     vec3 offset = vec3(1.0, 0.0, 0.0);
     float orbit_trap = 100000.0;
@@ -74,7 +68,7 @@ vec2 vicseksnowflake_sdf(vec3 z) {
     z /= 2.0;
 
     for (int i = 0; i < MAX_ITERATIONS; i++) {
-        if (i >= iterations) break;
+        if (i >= fractal_iterations) break;
         
         z = abs(z);
         if (z.x - z.y < 0.0) z.xy = z.yx;
@@ -91,160 +85,159 @@ vec2 vicseksnowflake_sdf(vec3 z) {
         orbit_trap = min(orbit_trap, r);
     }
     
-    d = cube_sdf3d(z, vec3(0.5)) * s;
+    d = box_distance(z, vec3(0.5)) * s;
     return vec2(d * 2.0, orbit_trap).yx;
 }
 
-vec3 ray_marcher(vec3 ro, vec3 rd) {
-    float dfo = 0.0;
-    float orbit_trap_distance;
-    float total_marches = 0.0;
+vec3 trace_ray(vec3 ray_origin, vec3 ray_dir) {
+    float distance = 0.0;
+    float orbit_trap;
+    float steps = 0.0;
 
     for (int i = 0; i < MAX_STEPS; i++) {
-        vec2 data = vicseksnowflake_sdf(ro + rd * dfo);
+        vec2 data = fractal_distance(ray_origin + ray_dir * distance);
         float point_distance = data.y;
-        dfo += point_distance * raystep_multiplier;
-        total_marches += 1.0;
+        distance += point_distance * ray_step_scale;
+        steps += 1.0;
 
-        if (abs(point_distance) < surface_distance || dfo > max_distance) {
-            orbit_trap_distance = data.x;
+        if (abs(point_distance) < surface_threshold || distance > max_ray_distance) {
+            orbit_trap = data.x;
             break;
         };
     }
 
-    if (super_glow && dfo < max_distance) { total_marches = float(MAX_STEPS); }
+    if (enable_super_glow && distance < max_ray_distance) { steps = float(MAX_STEPS); }
 
-    return vec3(dfo > max_distance ? 0.0 : orbit_trap_distance, dfo, total_marches);
+    return vec3(distance > max_ray_distance ? 0.0 : orbit_trap, distance, steps);
 }
 
-float soft_shadow(vec3 p, vec3 light_pos, float k) {
-    vec3 rd = normalize(light_pos - p);
-    float res = 1.0;
+float compute_shadow(vec3 p, vec3 light_pos, float k) {
+    vec3 ray_dir = normalize(light_pos - p);
+    float shadow = 1.0;
     float ph = 1e20;
-    float t = surface_distance + self_shadow_bias;
+    float t = surface_threshold + shadow_bias;
 
     for (int i = 0; i < SHADOW_STEPS; i++) {
-        float h = vicseksnowflake_sdf(p + rd * t).y;
+        float h = fractal_distance(p + ray_dir * t).y;
 
-        if (h < surface_distance) {
+        if (h < surface_threshold) {
             return 0.0;
         }
 
         float y = h * h / (2.0 * ph);
         float d = sqrt(h * h - y * y);
-        res = min(res, k * d / max(0.0, t - y));
+        shadow = min(shadow, k * d / max(0.0, t - y));
         ph = h;
 
-        t += max(h, min_step_size);
+        t += max(h, min_step);
 
-        if (t >= max_distance) {
+        if (t >= max_ray_distance) {
             break;
         }
     }
 
-    return clamp(res, 0.0, 1.0);
+    return clamp(shadow, 0.0, 1.0);
 }
 
-vec3 get_light(vec3 p, vec3 rd, vec3 ro, vec3 light_pos, vec3 light_color, vec3 normal) {
+vec3 compute_lighting(vec3 p, vec3 ray_dir, vec3 ray_origin, vec3 light_pos, vec3 light_tint, vec3 normal) {
     vec3 to_light = normalize(light_pos - p);
-    float light = light_intensity * clamp(dot(to_light, normal), 0.05, 1.0);
+    float light = light_strength * clamp(dot(to_light, normal), 0.05, 1.0);
 
-    float shadow = soft_shadow(p, light_pos, shadow_softness);
-    light *= max(shadow, shadow_darkness);
+    float shadow = compute_shadow(p, light_pos, shadow_softness);
+    light *= max(shadow, shadow_strength);
     vec3 reflection = reflect(to_light, normal);
-    float specular = pow(max(dot(reflection, rd), 0.0), refraction_sharpness);
-    light *= max(specular * refraction_intensity, 1.0);
+    float specular = pow(max(dot(reflection, ray_dir), 0.0), refraction_sharpness);
+    light *= max(specular * refraction_strength, 1.0);
 
-    return max(light_color * light, ambient_light);
+    return max(light_tint * light, ambient_strength);
 }
 
-vec3 calculate_normal(vec3 p) {
+vec3 compute_normal(vec3 p) {
     float h = 0.000001;
     return normalize(vec3(
-        vicseksnowflake_sdf(p + vec3(h, 0.0, 0.0)).y - vicseksnowflake_sdf(p - vec3(h, 0.0, 0.0)).y,
-        vicseksnowflake_sdf(p + vec3(0.0, h, 0.0)).y - vicseksnowflake_sdf(p - vec3(0.0, h, 0.0)).y,
-        vicseksnowflake_sdf(p + vec3(0.0, 0.0, h)).y - vicseksnowflake_sdf(p - vec3(0.0, 0.0, h)).y
+        fractal_distance(p + vec3(h, 0.0, 0.0)).y - fractal_distance(p - vec3(h, 0.0, 0.0)).y,
+        fractal_distance(p + vec3(0.0, h, 0.0)).y - fractal_distance(p - vec3(0.0, h, 0.0)).y,
+        fractal_distance(p + vec3(0.0, 0.0, h)).y - fractal_distance(p - vec3(0.0, 0.0, h)).y
     ));
 }
 
-float calculate_ambient_occlusion(vec3 p, vec3 normal) {
+float compute_ao(vec3 p, vec3 normal) {
     float occlusion = 0.0;
     float weight = 1.0 / float(AO_STEPS);
 
     for (int i = 0; i < AO_STEPS; i++) {
         float ao_scale = float(i + 1) / float(AO_STEPS);
-        vec3 sample_point = p + normal * ao_scale * ambient_occlusion_radius;
-        float d = vicseksnowflake_sdf(sample_point).y;
-        occlusion += max(ambient_occlusion_radius - d, 0.0) * weight / ambient_occlusion_radius;
+        vec3 sample_point = p + normal * ao_scale * ao_radius;
+        float d = fractal_distance(sample_point).y;
+        occlusion += max(ao_radius - d, 0.0) * weight / ao_radius;
     }
 
     return 1.0 - clamp(occlusion, 0.0, 1.0);
 }
 
-vec3 render(vec3 ray_origin, vec3 ray_dir, vec2 screen_uv) {
-    vec3 data = ray_marcher(ray_origin, ray_dir);
+vec3 shade_pixel(vec3 ray_origin, vec3 ray_dir, vec2 screen_uv) {
+    vec3 data = trace_ray(ray_origin, ray_dir);
     float orbit_trap = data.x;
-    float dfo = data.y;
-    float total_marches = data.z;
-    vec3 palette_color = mix(palette_color1, palette_color2, mix(0.0, orbit_trap, float(int(colors))));
+    float distance = data.y;
+    float steps = data.z;
+    vec3 pixel_color = mix(color1, color2, mix(0.0, orbit_trap, float(int(enable_colors))));
     vec3 final_color;
 
-    if (dfo >= max_distance) {
+    if (distance >= max_ray_distance) {
         float vignette = smoothstep(vignette_radius, vignette_radius - vignette_strength, length(screen_uv - vec2(0.5)));
-        final_color = bg_color * vignette;
+        final_color = background_tint * vignette;
     } else {
-        vec3 p = ray_origin + ray_dir * dfo;
-        vec3 normal = calculate_normal(p);
+        vec3 p = ray_origin + ray_dir * distance;
+        vec3 normal = compute_normal(p);
 
-        float ao = max(calculate_ambient_occlusion(p, normal), 0.0);
-        vec3 light1 = get_light(p, ray_dir, ray_origin, light1_position, light1_color, normal);
-        vec3 light2 = get_light(p, ray_dir, ray_origin, light2_position, light2_color, normal);
+        float ao = max(compute_ao(p, normal), 0.0);
+        vec3 light1 = compute_lighting(p, ray_dir, ray_origin, light1_pos, light1_tint, normal);
+        vec3 light2 = compute_lighting(p, ray_dir, ray_origin, light2_pos, light2_tint, normal);
 
         float vignette = smoothstep(vignette_radius, vignette_radius - vignette_strength, length(screen_uv - vec2(0.5)));
-        final_color = palette_color * ao * (light1 + light2) * vignette;
+        final_color = pixel_color * ao * (light1 + light2) * vignette;
     }
 
-    if (glow && float(total_marches) * raystep_multiplier > glow_threshold) {
-        float final_glow_intensity = (glow_intensity - 0.2) * smoothstep(glow_threshold, 100.0, float(total_marches) * raystep_multiplier);
-        vec3 final_glow_color = glow_color * 3.0;
-        final_color += final_glow_color * pow(final_glow_intensity, glow_falloff);
+    if (enable_glow && float(steps) * ray_step_scale > glow_min) {
+        float glow = (glow_strength - 0.2) * smoothstep(glow_min, 100.0, float(steps) * ray_step_scale);
+        vec3 glow_color = glow_tint * 3.0;
+        final_color += glow_color * pow(glow, glow_decay);
     }
 
-    float fog_distance = dfo < max_distance ? dfo : max_distance;
-    float fog_amount = 1.0 - exp(-fog_density * fog_distance);
-    final_color = mix(final_color, fog_color, pow(fog_amount, fog_falloff));
+    float fog_distance = distance < max_ray_distance ? distance : max_ray_distance;
+    float fog = 1.0 - exp(-fog_strength * fog_distance);
+    final_color = mix(final_color, fog_tint, pow(fog, fog_decay));
 
     return final_color;
 }
 
-mat3 setCamera( in vec3 ro, in vec3 ta, float cr )
-{
+mat3 setup_camera(vec3 ro, vec3 ta, float cr) {
     vec3 cw = normalize(ta-ro);
     vec3 cp = vec3(sin(cr), cos(cr),0.0);
-    vec3 cu = normalize( cross(cw,cp) );
-    vec3 cv =          ( cross(cu,cw) );
-    return mat3( cu, cv, cw );
+    vec3 cu = normalize(cross(cw,cp));
+    vec3 cv = cross(cu,cw);
+    return mat3(cu, cv, cw);
 }
 
-void mainImage( out vec4 fragColor, in vec2 fragCoord ) {
+void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     vec2 uv = fragCoord.xy / iResolution.xy;
     vec2 mo = iMouse.xy/iResolution.xy;
     float time = iTime*0.8;
 
-    iterations = iMouse.z >= 0.0001 ? 1 + int(7. * iMouse.x / iResolution.x) : 6; 
+    fractal_iterations = iMouse.z >= 0.0001 ? 1 + int(7. * iMouse.x / iResolution.x) : 6; 
     
-    vec3 ta = vec3( 0.0, 0.0, 0.0 );
-    vec3 ro = ta + vec3(5.0 * cos(iTime), 5.0 * sin(time), 5.0 * cos(time));
-    mat3 ca = setCamera( ro, ta, 0.0 );
+    vec3 target = vec3(0.0, 0.0, 0.0);
+    vec3 camera_pos = target + vec3(5.0 * cos(iTime), 5.0 * sin(time), 5.0 * cos(time));
+    mat3 camera = setup_camera(camera_pos, target, 0.0);
 
     vec2 p = (2.0*fragCoord-iResolution.xy)/iResolution.y;
-    vec3 rd = ca * normalize(vec3(p, 4.5));
-    vec3 col = render(ro, rd, uv);
+    vec3 ray_dir = camera * normalize(vec3(p, 4.5));
+    vec3 color = shade_pixel(camera_pos, ray_dir, uv);
 
-    col = col * 3.0 / (2.5 + col);
-    col = pow( col, vec3(0.4545) );
+    color = color * 3.0 / (2.5 + color);
+    color = pow(color, vec3(0.4545));
     
-    fragColor = vec4(col, 1.0);
+    fragColor = vec4(color, 1.0);
 }
 
 void main() {
