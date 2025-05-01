@@ -34,32 +34,32 @@ float vignette_radius = 0.925;
 float vignette_strength = 0.8;
 
 // Material Properties
-vec3 material_color1 = vec3(0.2, 0.6, 0.9);  // Blue for first fractal
-vec3 material_color2 = vec3(0.3, 0.7, 1.0);  // Light blue accent
-vec3 material_color3 = vec3(0.9, 0.2, 0.3);  // Red for second fractal
-vec3 material_color4 = vec3(1.0, 0.3, 0.4);  // Light red accent
-vec3 material_background = vec3(0.02, 0.05, 0.1);
-float material_refraction = 2.611;
-float material_sharpness = 8.0;
+vec3 material_color1 = vec3(0.2, 0.8, 1.0);  // Keep vibrant colors
+vec3 material_color2 = vec3(0.3, 0.9, 1.0);
+vec3 material_color3 = vec3(1.0, 0.2, 0.5);
+vec3 material_color4 = vec3(1.0, 0.3, 0.6);
+vec3 material_background = vec3(0.02, 0.05, 0.1);  // Darker background
+float material_refraction = 1.8;  // Reduced refraction
+float material_sharpness = 6.0;   // Reduced sharpness
 
 // Lighting Properties
-float light_strength = 3.600001;
+float light_strength = 2.2;       // Significantly reduced light strength
 vec3 light_pos1 = vec3(10.0);
 vec3 light_pos2 = vec3(-10.0);
-vec3 light_tint1 = vec3(1.0);
-vec3 light_tint2 = vec3(1.0);
-float ambient_strength = 0.35;
+vec3 light_tint1 = vec3(0.8);    // Reduced tint intensity
+vec3 light_tint2 = vec3(0.8);    // Reduced tint intensity
+float ambient_strength = 0.25;    // Reduced ambient light
 
 // Effect Properties
-float glow_strength = 1.3;
-vec3 glow_color = vec3(1.0);
+float glow_strength = 0.8;        // Reduced glow
+vec3 glow_color = vec3(0.8);     // Reduced glow intensity
 float glow_min = 0.0;
-float glow_decay = 0.9;
-bool super_glow = false;
+float glow_decay = 1.2;          // Increased decay for less glow
+bool super_glow = false;         // Disable super glow
 bool enable_glow = true;
-vec3 fog_color = vec3(0.5, 0.6, 0.7);
-float fog_strength = 0.08;
-float fog_decay = 3.0;
+vec3 fog_color = vec3(0.4, 0.5, 0.6);  // Darker fog
+float fog_strength = 0.1;        // Slightly increased fog
+float fog_decay = 2.8;
 
 // Shadow Properties
 float shadow_bias = 0.01;
@@ -420,8 +420,8 @@ vec4 query_radiance_field(vec3 pos, vec3 dir) {
             custom_tanh(layer_output.x),
             custom_tanh(layer_output.y),
             custom_tanh(layer_output.z)
-        ) * 0.5 + 0.5,  // RGB color
-        exp(layer_output.w) * RADIANCE_FIELD_DENSITY_SCALE  // Density
+        ) * 0.7 + 0.5,  // Increased color scaling
+        exp(layer_output.w) * RADIANCE_FIELD_DENSITY_SCALE * 1.5  // Increased density
     );
 }
 
@@ -461,7 +461,7 @@ vec3 shade_pixel(vec3 ray_origin, vec3 ray_dir, vec2 screen_uv) {
     
     if (distance >= max_ray_distance) {
         float vignette = smoothstep(vignette_radius, vignette_radius - vignette_strength, length(screen_uv - vec2(0.5)));
-        return mix(material_background * vignette, radiance_color, 0.5);
+        return mix(material_background * vignette, radiance_color, 0.4);  // Reduced radiance influence
     }
     
     vec3 p = ray_origin + ray_dir * distance;
@@ -502,7 +502,7 @@ vec3 shade_pixel(vec3 ray_origin, vec3 ray_dir, vec2 screen_uv) {
     final_color = mix(final_color, reflection, fresnel * REFLECTION_STRENGTH);
     
     // Blend with radiance field
-    final_color = mix(final_color, radiance_color, 0.3);
+    final_color = mix(final_color, radiance_color, 0.25);
     
     float vignette = smoothstep(vignette_radius, vignette_radius - vignette_strength, length(screen_uv - vec2(0.5)));
     final_color *= vignette;
