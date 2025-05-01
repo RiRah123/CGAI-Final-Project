@@ -74,6 +74,13 @@ const float WEIGHT_2 = 0.7;
 const float WEIGHT_3 = 0.3;
 const float WEIGHT_4 = 0.6;
 
+// Ray Tracing Parameters
+const float MAX_REFLECTION_BOUNCES = 3.0;
+const float REFLECTION_STRENGTH = 0.5;
+const float FRESNEL_BIAS = 0.1;
+const float FRESNEL_SCALE = 0.4;
+const float FRESNEL_POWER = 2.0;
+
 // Utility Functions
 float box_distance(vec3 p, vec3 s) {
     vec3 q = abs(p) - s;
@@ -255,17 +262,94 @@ float compute_ao(vec3 p, vec3 normal) {
     return 1.0 - clamp(occlusion, 0.0, 1.0);
 }
 
+// Compute fresnel reflection factor
+float compute_fresnel(vec3 normal, vec3 ray_dir) {
+    float fresnel = FRESNEL_BIAS + FRESNEL_SCALE * pow(1.0 + dot(normal, ray_dir), FRESNEL_POWER);
+    return clamp(fresnel, 0.0, 1.0);
+}
+
+// Get reflection color with neural influence - non-recursive version
+vec3 get_reflection_color(vec3 pos, vec3 normal, vec3 ray_dir, float time) {
+    vec3 total_reflection = vec3(0.0);
+    vec3 current_pos = pos;
+    vec3 current_dir = ray_dir;
+    vec3 current_normal = normal;
+    float reflection_factor = 1.0;
+    
+    for (int bounce = 0; bounce < 3; bounce++) {
+        // Calculate reflection ray
+        vec3 reflected = reflect(current_dir, current_normal);
+        
+        // Add some neural-influenced variation to reflection
+        vec4 reflection_influence = activate_neuron(vec4(reflected, time), time);
+        reflected = normalize(reflected + (reflection_influence.xyz - 0.5) * 0.1);
+        
+        // Trace reflection ray
+        vec3 reflection_data = trace_ray(current_pos + current_normal * surface_threshold * 2.0, reflected);
+        float reflection_dist = reflection_data.y;
+        
+        if (reflection_dist >= max_ray_distance) {
+            total_reflection += reflection_factor * material_background;
+            break;
+        }
+        
+        vec3 reflection_pos = current_pos + reflected * reflection_dist;
+        vec3 reflection_normal = compute_normal(reflection_pos);
+        
+        // Get base color at reflection point
+        vec3 reflection_color;
+        if (reflection_data.x < 0.5) {
+            vec3 c1 = get_animated_color(material_color1, 0.0);
+            vec3 c2 = get_animated_color(material_color2, 1.047);
+            reflection_color = mix(c1, c2, 0.5 + 0.5 * sin(time));
+        } else {
+            vec3 c3 = get_animated_color(material_color3, 2.094);
+            vec3 c4 = get_animated_color(material_color4, 3.142);
+            reflection_color = mix(c3, c4, 0.5 + 0.5 * sin(time + 3.14));
+        }
+        
+        // Apply neural color transformation
+        reflection_color = neural_color_transform(reflection_color, time);
+        
+        // Calculate lighting for reflection
+        float reflection_ao = compute_ao(reflection_pos, reflection_normal);
+        vec3 reflection_light1 = compute_lighting(reflection_pos, reflected, current_pos, light_pos1, light_tint1, reflection_normal);
+        vec3 reflection_light2 = compute_lighting(reflection_pos, reflected, current_pos, light_pos2, light_tint2, reflection_normal);
+        
+        reflection_color *= reflection_ao * (reflection_light1 + reflection_light2);
+        
+        // Add to total reflection
+        total_reflection += reflection_factor * reflection_color;
+        
+        // Update for next bounce
+        reflection_factor *= compute_fresnel(reflection_normal, reflected) * REFLECTION_STRENGTH;
+        if (reflection_factor < 0.1) break;
+        
+        current_pos = reflection_pos;
+        current_dir = reflected;
+        current_normal = reflection_normal;
+    }
+    
+    return total_reflection;
+}
+
 vec3 shade_pixel(vec3 ray_origin, vec3 ray_dir, vec2 screen_uv) {
     vec3 data = trace_ray(ray_origin, ray_dir);
     float fractal_id = data.x;
     float distance = data.y;
     float steps = data.z;
     
+    if (distance >= max_ray_distance) {
+        float vignette = smoothstep(vignette_radius, vignette_radius - vignette_strength, length(screen_uv - vec2(0.5)));
+        return material_background * vignette;
+    }
+    
     vec3 p = ray_origin + ray_dir * distance;
-    vec3 pixel_color;
+    vec3 normal = compute_normal(p);
     float time = iTime * 0.5;
     
     // Neural network influenced colors
+    vec3 pixel_color;
     if (fractal_id < 0.5) {
         vec3 c1 = get_animated_color(material_color1, 0.0);
         vec3 c2 = get_animated_color(material_color2, 1.047);
@@ -277,27 +361,30 @@ vec3 shade_pixel(vec3 ray_origin, vec3 ray_dir, vec2 screen_uv) {
         pixel_color = mix(c3, c4, 0.5 + 0.5 * sin(time + 3.14));
         pixel_color = neural_color_transform(pixel_color, time);
     }
+    
+    // Calculate base lighting
+    float ao = max(compute_ao(p, normal), 0.0);
+    
+    // Neural network influenced lighting
+    vec4 light_influence = activate_neuron(vec4(p * 0.1, time), time);
+    light_pos1 = mix(light_pos1, 10.0 * (light_influence.xyz - 0.5), 0.3);
+    light_pos2 = mix(light_pos2, -10.0 * (light_influence.wzx - 0.5), 0.3);
+    
+    vec3 light1 = compute_lighting(p, ray_dir, ray_origin, light_pos1, light_tint1, normal);
+    vec3 light2 = compute_lighting(p, ray_dir, ray_origin, light_pos2, light_tint2, normal);
+    
+    // Calculate reflection
+    float fresnel = compute_fresnel(normal, ray_dir);
+    vec3 reflection = get_reflection_color(p, normal, ray_dir, time);
+    
+    // Combine everything
+    vec3 final_color = pixel_color * ao * (light1 + light2);
+    final_color = mix(final_color, reflection, fresnel * REFLECTION_STRENGTH);
+    
+    float vignette = smoothstep(vignette_radius, vignette_radius - vignette_strength, length(screen_uv - vec2(0.5)));
+    final_color *= vignette;
 
-    vec3 final_color;
-    if (distance >= max_ray_distance) {
-        float vignette = smoothstep(vignette_radius, vignette_radius - vignette_strength, length(screen_uv - vec2(0.5)));
-        final_color = material_background * vignette;
-    } else {
-        vec3 normal = compute_normal(p);
-        float ao = max(compute_ao(p, normal), 0.0);
-        
-        // Neural network influenced lighting
-        vec4 light_influence = activate_neuron(vec4(p * 0.1, time), time);
-        light_pos1 = mix(light_pos1, 10.0 * (light_influence.xyz - 0.5), 0.3);
-        light_pos2 = mix(light_pos2, -10.0 * (light_influence.wzx - 0.5), 0.3);
-        
-        vec3 light1 = compute_lighting(p, ray_dir, ray_origin, light_pos1, light_tint1, normal);
-        vec3 light2 = compute_lighting(p, ray_dir, ray_origin, light_pos2, light_tint2, normal);
-
-        float vignette = smoothstep(vignette_radius, vignette_radius - vignette_strength, length(screen_uv - vec2(0.5)));
-        final_color = pixel_color * ao * (light1 + light2) * vignette;
-    }
-
+    // Add glow
     if (enable_glow && float(steps) * ray_step_scale > glow_min) {
         vec4 glow_influence = activate_neuron(vec4(p * 0.1, time), time);
         float glow = (glow_strength - 0.2) * smoothstep(glow_min, 100.0, float(steps) * ray_step_scale);
@@ -305,14 +392,13 @@ vec3 shade_pixel(vec3 ray_origin, vec3 ray_dir, vec2 screen_uv) {
         final_color += neural_glow * pow(glow, glow_decay);
     }
 
+    // Add fog
     float fog_distance = distance < max_ray_distance ? distance : max_ray_distance;
     float fog = 1.0 - exp(-fog_strength * fog_distance);
-    
-    // Neural network influenced fog color
     vec4 fog_influence = activate_neuron(vec4(ray_dir * 0.1, time), time);
     vec3 neural_fog = mix(fog_color, vec3(fog_influence.xyz), 0.3);
-    
     final_color = mix(final_color, neural_fog, pow(fog, fog_decay));
+
     return final_color;
 }
 
