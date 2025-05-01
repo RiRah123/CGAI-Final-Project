@@ -24,6 +24,8 @@ float vignette_strength = 0.8;
 // Material Properties
 vec3 material_color1 = vec3(0.2, 0.6, 0.9);
 vec3 material_color2 = vec3(0.1, 0.3, 0.8);
+vec3 material_color3 = vec3(0.9, 0.3, 0.2);
+vec3 material_color4 = vec3(0.8, 0.2, 0.1);
 vec3 material_background = vec3(0.02, 0.05, 0.1);
 float material_refraction = 2.611;
 float material_sharpness = 8.0;
@@ -81,9 +83,9 @@ mat3 setup_camera(vec3 ro, vec3 ta, float cr) {
 }
 
 // Core Functions
-vec2 fractal_distance(vec3 z) {
+vec2 fractal_distance_single(vec3 z, float offset_x) {
     float scale = 3.0;
-    vec3 offset = vec3(1.0, 0.0, 0.0);
+    vec3 offset = vec3(1.0 + offset_x, 0.0, 0.0);
     float orbit_trap = 100000.0;
     float s = 1.0;
     float d = 1000.0;
@@ -109,6 +111,36 @@ vec2 fractal_distance(vec3 z) {
     
     d = box_distance(z, vec3(0.5)) * s;
     return vec2(d * 2.0, orbit_trap).yx;
+}
+
+vec3 get_animated_color(vec3 base_color, float time_offset) {
+    float t = iTime * 0.5 + time_offset;
+    float r = base_color.r * (0.8 + 0.2 * sin(t));
+    float g = base_color.g * (0.8 + 0.2 * sin(t + 2.094));
+    float b = base_color.b * (0.8 + 0.2 * sin(t + 4.189));
+    return vec3(r, g, b);
+}
+
+vec2 fractal_distance(vec3 z) {
+    float time = iTime * 0.5;
+    float mouse_influence = iMouse.x / iResolution.x * 2.0;
+    
+    // Dynamic positioning based on time and mouse
+    vec3 offset2 = vec3(4.0 * (1.0 + 0.2 * sin(time)), 
+                        2.0 * sin(time * 0.7) * mouse_influence,
+                        2.0 * cos(time * 0.5) * mouse_influence);
+    
+    vec2 d1 = fractal_distance_single(z, 0.0);
+    vec2 d2 = fractal_distance_single(z - offset2, 2.0);
+    
+    // Smooth blend between the two objects
+    float blend = smoothstep(-1.0, 1.0, sin(time));
+    float d = mix(d1.y, d2.y, blend);
+    
+    if (d1.y < d2.y) {
+        return d1;
+    }
+    return d2;
 }
 
 vec3 trace_ray(vec3 ray_origin, vec3 ray_dir) {
@@ -201,14 +233,23 @@ vec3 shade_pixel(vec3 ray_origin, vec3 ray_dir, vec2 screen_uv) {
     float distance = data.y;
     float steps = data.z;
     
-    vec3 pixel_color = mix(material_color1, material_color2, orbit_trap);
+    vec3 p = ray_origin + ray_dir * distance;
+    vec3 pixel_color;
+    if (p.x < 2.0) {
+        vec3 c1 = get_animated_color(material_color1, 0.0);
+        vec3 c2 = get_animated_color(material_color2, 1.047);
+        pixel_color = mix(c1, c2, orbit_trap);
+    } else {
+        vec3 c3 = get_animated_color(material_color3, 2.094);
+        vec3 c4 = get_animated_color(material_color4, 3.142);
+        pixel_color = mix(c3, c4, orbit_trap);
+    }
     vec3 final_color;
 
     if (distance >= max_ray_distance) {
         float vignette = smoothstep(vignette_radius, vignette_radius - vignette_strength, length(screen_uv - vec2(0.5)));
         final_color = material_background * vignette;
     } else {
-        vec3 p = ray_origin + ray_dir * distance;
         vec3 normal = compute_normal(p);
 
         float ao = max(compute_ao(p, normal), 0.0);
@@ -242,25 +283,53 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     cycle = pow(cycle, 0.7);
     fractal_iterations = 1 + int(7.0 * cycle);
     
-    vec3 target = vec3(0.0);
-    float camera_distance = 7.0 + 2.0 * sin(time * 0.2);
-    float camera_height = 3.0 * sin(time * 0.3) + 2.0 * cos(time * 0.4);
-    float camera_rotation = time * 0.2 + sin(time * 0.3) * 0.5;
+    // Dynamic camera movement
+    float camera_radius = 7.0 + sin(time * 0.5) * 2.0;
+    float camera_height = 3.0 + cos(time * 0.3) * 2.0;
+    float camera_speed = 0.5;
     
+    vec3 target = vec3(2.0 * sin(time * 0.2), 0.0, 0.0);
     vec3 camera_pos = target + vec3(
-        camera_distance * cos(time * 0.5) * cos(time * 0.2),
+        camera_radius * cos(time * camera_speed),
         camera_height,
-        camera_distance * sin(time * 0.5) * sin(time * 0.2)
+        camera_radius * sin(time * camera_speed)
     );
     
+    // Mouse influence on camera
+    if (iMouse.z > 0.0) {
+        camera_pos.xz += mo * 5.0 - 2.5;
+        camera_pos.y += (mo.y - 0.5) * 5.0;
+    }
+    
+    float camera_rotation = sin(time * 0.3) * 0.2;
+    
+    // Dynamic lighting
+    light_pos1 = vec3(
+        10.0 * cos(time * 0.7),
+        8.0 + 4.0 * sin(time * 0.5),
+        10.0 * sin(time * 0.7)
+    );
+    
+    light_pos2 = vec3(
+        -10.0 * cos(time * 0.5),
+        6.0 + 4.0 * sin(time * 0.6),
+        -10.0 * sin(time * 0.5)
+    );
+    
+    // Color cycling for lights
+    light_tint1 = vec3(0.8 + 0.2 * sin(time), 0.8 + 0.2 * sin(time + 2.094), 1.0);
+    light_tint2 = vec3(1.0, 0.8 + 0.2 * sin(time + 4.189), 0.8 + 0.2 * sin(time));
+    
     mat3 camera = setup_camera(camera_pos, target, camera_rotation);
-
+    
     vec2 p = (2.0*fragCoord-iResolution.xy)/iResolution.y;
     vec3 ray_dir = camera * normalize(vec3(p, 4.5));
     vec3 color = shade_pixel(camera_pos, ray_dir, uv);
-
+    
+    // Enhanced color grading
     color = color * 3.0 / (2.5 + color);
     color = pow(color, vec3(0.4545));
+    color += 0.05 * vec3(sin(uv.x * 50.0 + time) * sin(uv.y * 50.0 + time)); // Subtle sparkle effect
     
     fragColor = vec4(color, 1.0);
 }

@@ -1,12 +1,17 @@
-const glCanvas = document.getElementById('glCanvas');
-const glContext = glCanvas.getContext('webgl');
+// Initialize WebGL
+function initWebGL() {
+    const canvas = document.getElementById('glCanvas');
+    const gl = canvas.getContext('webgl');
 
-if (!glContext) {
-    alert('WebGL not supported');
-} else {
-    function compileShader(gl, shaderType, shaderCode) {
-        const shader = gl.createShader(shaderType);
-        gl.shaderSource(shader, shaderCode);
+    if (!gl) {
+        alert('WebGL not supported');
+        return;
+    }
+
+    // Create shader program
+    function createShader(gl, type, source) {
+        const shader = gl.createShader(type);
+        gl.shaderSource(shader, source);
         gl.compileShader(shader);
 
         if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
@@ -17,96 +22,104 @@ if (!glContext) {
         return shader;
     }
 
-    async function fetchShaderCode(shaderPath) {
-        const response = await fetch(shaderPath);
-        return await response.text();
-    }
-
-    async function setupWebGL() {
+    // Load shader code
+    async function loadShader() {
         try {
-            const vertexShaderCode = `
+            const response = await fetch('shader.glsl');
+            const fragmentShaderSource = await response.text();
+            
+            // Create program
+            const vertexShader = createShader(gl, gl.VERTEX_SHADER, `
                 attribute vec2 position;
                 void main() {
                     gl_Position = vec4(position, 0.0, 1.0);
                 }
-            `;
-            const vertexShader = compileShader(glContext, glContext.VERTEX_SHADER, vertexShaderCode);
+            `);
 
-            const fragmentShaderCode = await fetchShaderCode('shader.glsl');
-            const fragmentShader = compileShader(glContext, glContext.FRAGMENT_SHADER, fragmentShaderCode);
+            const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
 
-            if (!vertexShader || !fragmentShader) {
-                console.error('Failed to create shaders');
+            const program = gl.createProgram();
+            gl.attachShader(program, vertexShader);
+            gl.attachShader(program, fragmentShader);
+            gl.linkProgram(program);
+
+            if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                console.error('Program link error:', gl.getProgramInfoLog(program));
                 return;
             }
 
-            const shaderProgram = glContext.createProgram();
-            glContext.attachShader(shaderProgram, vertexShader);
-            glContext.attachShader(shaderProgram, fragmentShader);
-            glContext.linkProgram(shaderProgram);
-
-            if (!glContext.getProgramParameter(shaderProgram, glContext.LINK_STATUS)) {
-                console.error('Program link error:', glContext.getProgramInfoLog(shaderProgram));
-                return;
-            }
-
-            const vertexBuffer = glContext.createBuffer();
-            glContext.bindBuffer(glContext.ARRAY_BUFFER, vertexBuffer);
-            glContext.bufferData(glContext.ARRAY_BUFFER, new Float32Array([
+            // Create buffer
+            const buffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
                 -1, -1,
                 1, -1,
                 -1, 1,
                 1, 1
-            ]), glContext.STATIC_DRAW);
+            ]), gl.STATIC_DRAW);
 
-            const resolutionUniform = glContext.getUniformLocation(shaderProgram, 'iResolution');
-            const timeUniform = glContext.getUniformLocation(shaderProgram, 'iTime');
-            const mouseUniform = glContext.getUniformLocation(shaderProgram, 'iMouse');
+            // Get uniform locations
+            const resolutionLocation = gl.getUniformLocation(program, 'iResolution');
+            const timeLocation = gl.getUniformLocation(program, 'iTime');
+            const mouseLocation = gl.getUniformLocation(program, 'iMouse');
 
-            let mousePosX = 0;
-            let mousePosY = 0;
-            let mousePressed = -1;
+            // Mouse position
+            let mouseX = 0;
+            let mouseY = 0;
+            let mouseZ = -1;
 
-            glCanvas.addEventListener('mousemove', (event) => {
-                const canvasRect = glCanvas.getBoundingClientRect();
-                mousePosX = event.clientX - canvasRect.left;
-                mousePosY = event.clientY - canvasRect.top;
-                mousePressed = 1;
+            canvas.addEventListener('mousemove', (e) => {
+                const rect = canvas.getBoundingClientRect();
+                mouseX = e.clientX - rect.left;
+                mouseY = e.clientY - rect.top;
+                mouseZ = 1;
             });
 
-            glCanvas.addEventListener('mouseup', () => {
-                mousePressed = -1;
+            canvas.addEventListener('mouseup', () => {
+                mouseZ = -1;
             });
 
-            function drawFrame() {
-                const canvasWidth = glCanvas.clientWidth;
-                const canvasHeight = glCanvas.clientHeight;
-                if (glCanvas.width !== canvasWidth || glCanvas.height !== canvasHeight) {
-                    glCanvas.width = canvasWidth;
-                    glCanvas.height = canvasHeight;
-                    glContext.viewport(0, 0, glCanvas.width, glCanvas.height);
+            // Animation loop
+            function render() {
+                // Resize canvas
+                const displayWidth = canvas.clientWidth;
+                const displayHeight = canvas.clientHeight;
+                if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
+                    canvas.width = displayWidth;
+                    canvas.height = displayHeight;
+                    gl.viewport(0, 0, canvas.width, canvas.height);
                 }
 
-                glContext.useProgram(shaderProgram);
+                // Use program
+                gl.useProgram(program);
 
-                glContext.uniform2f(resolutionUniform, glCanvas.width, glCanvas.height);
-                glContext.uniform1f(timeUniform, performance.now() / 1000);
-                glContext.uniform3f(mouseUniform, mousePosX, mousePosY, mousePressed);
+                // Set uniforms
+                gl.uniform2f(resolutionLocation, canvas.width, canvas.height);
+                gl.uniform1f(timeLocation, performance.now() / 1000);
+                gl.uniform3f(mouseLocation, mouseX, mouseY, mouseZ);
 
-                const positionAttribute = glContext.getAttribLocation(shaderProgram, 'position');
-                glContext.enableVertexAttribArray(positionAttribute);
-                glContext.vertexAttribPointer(positionAttribute, 2, glContext.FLOAT, false, 0, 0);
+                // Set attributes
+                const positionLocation = gl.getAttribLocation(program, 'position');
+                gl.enableVertexAttribArray(positionLocation);
+                gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
 
-                glContext.drawArrays(glContext.TRIANGLE_STRIP, 0, 4);
+                // Draw
+                gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
-                requestAnimationFrame(drawFrame);
+                // Next frame
+                requestAnimationFrame(render);
             }
 
-            drawFrame();
+            // Start animation
+            render();
         } catch (error) {
-            console.error('Error during initialization:', error);
+            console.error('Error loading shader:', error);
         }
     }
 
-    setupWebGL();
-} 
+    // Start loading the shader
+    loadShader();
+}
+
+// Initialize WebGL when the page loads
+window.addEventListener('load', initWebGL); 
