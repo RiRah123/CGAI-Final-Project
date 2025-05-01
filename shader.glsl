@@ -4,16 +4,26 @@ precision highp float;
 uniform vec2 iResolution;
 uniform float iTime;
 uniform vec3 iMouse;
+uniform sampler2D radiance_field_weights;  // New uniform for neural network weights
+uniform float radiance_field_scale;        // Scale factor for the radiance field
 
 // Constants
 #define PHI 1.6180339887498948482
 #define TAU 6.28318530717958647692
+#define PI 3.14159265358979323846
 #define MAX_ITERATIONS 12
 #define MAX_STEPS 150
 #define SHADOW_STEPS 20
 #define AO_STEPS 8
 #define NUM_SPLATS 8
 #define SPLAT_SIZE 0.15
+
+// Radiance Field Constants
+#define RADIANCE_FIELD_STEPS 64
+#define RADIANCE_FIELD_MIN_DIST 0.1
+#define RADIANCE_FIELD_MAX_DIST 20.0
+#define RADIANCE_FIELD_DENSITY_SCALE 1.0
+#define RADIANCE_FIELD_COLOR_SCALE 1.0
 
 // Global Variables
 int fractal_iterations;
@@ -76,7 +86,6 @@ const float WEIGHT_2 = 0.7;
 const float WEIGHT_3 = 0.3;
 const float WEIGHT_4 = 0.6;
 
-// Ray Tracing Parameters
 const float MAX_REFLECTION_BOUNCES = 3.0;
 const float REFLECTION_STRENGTH = 0.5;
 const float FRESNEL_BIAS = 0.1;
@@ -87,6 +96,12 @@ const float FRESNEL_POWER = 2.0;
 vec3 splat_colors[NUM_SPLATS];
 vec2 splat_positions[NUM_SPLATS];
 float splat_intensities[NUM_SPLATS];
+
+// Custom tanh implementation
+float custom_tanh(float x) {
+    float exp2x = exp(2.0 * x);
+    return (exp2x - 1.0) / (exp2x + 1.0);
+}
 
 // Utility Functions
 float box_distance(vec3 p, vec3 s) {
@@ -371,15 +386,82 @@ vec3 apply_splats(vec2 uv, vec3 base_color, float time) {
     return base_color + splat_contribution;
 }
 
+// Radiance Field Functions
+vec4 query_radiance_field(vec3 pos, vec3 dir) {
+    // Simple MLP implementation for radiance field
+    // Input: position (3D) and view direction (3D)
+    // Output: RGB color and density
+    
+    // Position encoding
+    vec3 pos_encoded = sin(pos * 2.0 * PI);
+    vec3 dir_encoded = sin(dir * 2.0 * PI);
+    
+    // First layer
+    vec4 hidden = vec4(0.0);
+    for(int i = 0; i < 3; i++) {
+        hidden += vec4(pos_encoded[i], dir_encoded[i], 1.0, 0.0);
+    }
+    hidden = vec4(
+        custom_tanh(hidden.x),
+        custom_tanh(hidden.y),
+        custom_tanh(hidden.z),
+        custom_tanh(hidden.w)
+    );
+    
+    // Second layer
+    vec4 layer_output = vec4(0.0);
+    for(int i = 0; i < 4; i++) {
+        layer_output += hidden[i] * vec4(0.5, 0.5, 0.5, 1.0);
+    }
+    
+    // Output: RGB color and density
+    return vec4(
+        vec3(
+            custom_tanh(layer_output.x),
+            custom_tanh(layer_output.y),
+            custom_tanh(layer_output.z)
+        ) * 0.5 + 0.5,  // RGB color
+        exp(layer_output.w) * RADIANCE_FIELD_DENSITY_SCALE  // Density
+    );
+}
+
+vec3 render_radiance_field(vec3 ray_origin, vec3 ray_dir) {
+    vec3 color = vec3(0.0);
+    float transmittance = 1.0;
+    
+    float step_size = (RADIANCE_FIELD_MAX_DIST - RADIANCE_FIELD_MIN_DIST) / float(RADIANCE_FIELD_STEPS);
+    float t = RADIANCE_FIELD_MIN_DIST;
+    
+    for(int i = 0; i < RADIANCE_FIELD_STEPS; i++) {
+        vec3 pos = ray_origin + ray_dir * t;
+        vec4 radiance = query_radiance_field(pos, ray_dir);
+        
+        // Volume rendering integration
+        float alpha = 1.0 - exp(-radiance.w * step_size);
+        color += transmittance * radiance.xyz * alpha;
+        transmittance *= (1.0 - alpha);
+        
+        if(transmittance < 0.01) break;
+        
+        t += step_size;
+        if(t > RADIANCE_FIELD_MAX_DIST) break;
+    }
+    
+    return color;
+}
+
 vec3 shade_pixel(vec3 ray_origin, vec3 ray_dir, vec2 screen_uv) {
     vec3 data = trace_ray(ray_origin, ray_dir);
     float fractal_id = data.x;
     float distance = data.y;
     float steps = data.z;
     
+    // Get radiance field contribution
+    vec3 radiance_color = render_radiance_field(ray_origin, ray_dir);
+    
     if (distance >= max_ray_distance) {
         float vignette = smoothstep(vignette_radius, vignette_radius - vignette_strength, length(screen_uv - vec2(0.5)));
-        return material_background * vignette;
+        return mix(material_background * vignette, radiance_color, 0.5);
     }
     
     vec3 p = ray_origin + ray_dir * distance;
@@ -418,6 +500,9 @@ vec3 shade_pixel(vec3 ray_origin, vec3 ray_dir, vec2 screen_uv) {
     // Combine everything
     vec3 final_color = pixel_color * ao * (light1 + light2);
     final_color = mix(final_color, reflection, fresnel * REFLECTION_STRENGTH);
+    
+    // Blend with radiance field
+    final_color = mix(final_color, radiance_color, 0.3);
     
     float vignette = smoothstep(vignette_radius, vignette_radius - vignette_strength, length(screen_uv - vec2(0.5)));
     final_color *= vignette;
