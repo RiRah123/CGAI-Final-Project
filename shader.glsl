@@ -22,10 +22,10 @@ float vignette_radius = 0.925;
 float vignette_strength = 0.8;
 
 // Material Properties
-vec3 material_color1 = vec3(0.2, 0.6, 0.9);
-vec3 material_color2 = vec3(0.1, 0.3, 0.8);
-vec3 material_color3 = vec3(0.9, 0.3, 0.2);
-vec3 material_color4 = vec3(0.8, 0.2, 0.1);
+vec3 material_color1 = vec3(0.2, 0.6, 0.9);  // Blue for first fractal
+vec3 material_color2 = vec3(0.3, 0.7, 1.0);  // Light blue accent
+vec3 material_color3 = vec3(0.9, 0.2, 0.3);  // Red for second fractal
+vec3 material_color4 = vec3(1.0, 0.3, 0.4);  // Light red accent
 vec3 material_background = vec3(0.02, 0.05, 0.1);
 float material_refraction = 2.611;
 float material_sharpness = 8.0;
@@ -129,13 +129,11 @@ vec2 fractal_distance(vec3 z) {
     vec2 d1 = fractal_distance_single(z, 0.0);
     vec2 d2 = fractal_distance_single(z - offset2, 2.0);
     
-    float blend = smoothstep(-1.0, 1.0, sin(time));
-    float d = mix(d1.y, d2.y, blend);
-    
+    // Return identifier for which fractal we hit (stored in x component)
     if (d1.y < d2.y) {
-        return d1;
+        return vec2(0.0, d1.y); // First fractal identifier
     }
-    return d2;
+    return vec2(1.0, d2.y); // Second fractal identifier
 }
 
 vec3 trace_ray(vec3 ray_origin, vec3 ray_dir) {
@@ -224,21 +222,26 @@ float compute_ao(vec3 p, vec3 normal) {
 
 vec3 shade_pixel(vec3 ray_origin, vec3 ray_dir, vec2 screen_uv) {
     vec3 data = trace_ray(ray_origin, ray_dir);
-    float orbit_trap = data.x;
+    float fractal_id = data.x; // Now using this to identify which fractal we hit
     float distance = data.y;
     float steps = data.z;
     
     vec3 p = ray_origin + ray_dir * distance;
     vec3 pixel_color;
-    if (p.x < 2.0) {
+    
+    // Color based on which fractal we hit
+    if (fractal_id < 0.5) {
+        // First fractal (blue)
         vec3 c1 = get_animated_color(material_color1, 0.0);
         vec3 c2 = get_animated_color(material_color2, 1.047);
-        pixel_color = mix(c1, c2, orbit_trap);
+        pixel_color = mix(c1, c2, 0.5 + 0.5 * sin(iTime));
     } else {
+        // Second fractal (red)
         vec3 c3 = get_animated_color(material_color3, 2.094);
         vec3 c4 = get_animated_color(material_color4, 3.142);
-        pixel_color = mix(c3, c4, orbit_trap);
+        pixel_color = mix(c3, c4, 0.5 + 0.5 * sin(iTime + 3.14));
     }
+    
     vec3 final_color;
 
     if (distance >= max_ray_distance) {
