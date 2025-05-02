@@ -13,4 +13,8 @@ For this project, Ajay and I recreated a [Vicsek Snowflake fractal](https://en.w
 The project's core part involves many interconnected graphics techniques that we learned throughout CGAI. First, we started with ray marching and signed distance functions to create the base of the Vicsek Snowflake pattern. This provides for real-time rendering of the fractal structure. To build upon this, we implemented a neural radiance field system. As mentioned in the previous section, this radiance field system uses 64-step volumetric sampling and a two-layer neural network. These components are used to process position and direction data, which allow for dynamic volumetric effects that improve the scene's depth and atmosphere. To add more organic movement, we incoporated Gaussian splats into our implementation. We did this by creating a system of 8 animated elements with different intensities and positions that create fluid, particle-like effects. This constrasts against the fractal's rigid structure. In addition, we added an advanced lighting system for our implementation. This implementation allows for dynamic dual lights and some real time reflections to be present within our image. Specefically, we used some physics with [Fresnel equations](https://en.wikipedia.org/wiki/Fresnel_equations) in our implementation to allow for realistic light interaction and ambient occlusion. We also tried to calculate the shadow
 customly with ray marching techniques. All of this works together to create a cohesive striking result.
 
+## Contributions
+
 ## Video Demo
+
+Visit the Link Here: [https://youtu.be/UV2tDr79eIg](https://youtu.be/UV2tDr79eIg)
