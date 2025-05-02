@@ -15,6 +15,8 @@ customly with ray marching techniques. All of this works together to create a co
 
 ## Contributions
 
+Both Rian and Ajay collabrated on this project. The implementation was divided based on our strengths. Rian focused on the fractal implementation, developing the signed distance functions and ray marching system that forms the foundation of the Vicsek Snowflake. He also created parts of the neural network that impact the fractal's geometry and color evolution. Ajay took over the visual enhancements. Specifically, he made Gaussian splat system for the particle movements and developed the custom radiance field with its 64-step volumetric sampling. Lastly, he made the advanced lighting system that dealt with  Fresnel equations for realistic light interaction and the custom shadow calculations.
+
 ## Video Demo
 
 Visit the Link Here: [https://youtu.be/UV2tDr79eIg](https://youtu.be/UV2tDr79eIg)
